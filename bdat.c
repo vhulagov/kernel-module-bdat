@@ -7,21 +7,11 @@
 #include <linux/init.h>
 #include <linux/module.h>
 #include <linux/kernel.h>
+#include <linux/mm.h>
 #include <linux/stringify.h>
 #include <linux/acpi.h>
 
-//#include "sphcs_pcie.h"
-//#include "sph_log.h"
-//#include "sphcs_cs.h"
-//#include "sphcs_genmsg.h"
-//#ifdef ULT
-//#include "sphcs_ult.h"
-//#endif
-//#include "sphcs_net.h"
-//#include "sph_version.h"
-//#include "sphcs_maintenance.h"
-//#include "sphcs_trace.h"
-//#include "sphcs_p2p_test.h"
+#include "bdat_version.h"
 
 struct BDAT_HEADER_STRUCTURE {
 	u8   BiosDataSignature[8];	// "BDATHEAD"
@@ -85,24 +75,24 @@ int init_bdat_sysfs(void)
 	}
 
 	if (table_header->length != 48) {
-		pr_err(GENERAL_LOG, "Wrong BDAT table size %d instead of 48\n", table_header->length);
+		pr_err("Wrong BDAT table size %d instead of 48\n", table_header->length);
 		ret = -EFAULT;
 		goto done;
 	}
 
 	bdat_phys_addr = *((uint64_t *)(((uintptr_t)table_header) + 40));
-	sph_log_info(GENERAL_LOG, "Found BDAT acpi table at=0x%llx\n", bdat_phys_addr);
+	pr_err("Found BDAT acpi table at=0x%llx\n", bdat_phys_addr);
 
 	bdat_virt = memremap(bdat_phys_addr, PAGE_SIZE, MEMREMAP_WB);
 	if (!bdat_virt) {
-		pr_err(GENERAL_LOG, "Failed to map BDAT table\n");
+		pr_err("Failed to map BDAT table\n");
 		ret = -EFAULT;
 		goto done;
 	}
 
 	header = (struct BDAT_HEADER_STRUCTURE *)bdat_virt;
 	if (strncmp(header->BiosDataSignature, "BDATHEAD", 8) != 0) {
-		pr_err(GENERAL_LOG, "BDAT wrong signature\n");
+		pr_err("BDAT wrong signature\n");
 		ret = -EFAULT;
 		goto done;
 	}
@@ -112,7 +102,7 @@ int init_bdat_sysfs(void)
 		memunmap(bdat_virt);
 		bdat_virt = memremap(bdat_phys_addr, PAGE_ALIGN(bdat_size), MEMREMAP_WB);
 		if (!bdat_virt) {
-			pr_err(GENERAL_LOG, "Failed to map BDAT table size=%d\n", bdat_size);
+			pr_err("Failed to map BDAT table size=%d\n", bdat_size);
 			ret = -EFAULT;
 			goto done;
 		}
@@ -122,7 +112,7 @@ int init_bdat_sysfs(void)
 
 	ret = sysfs_create_bin_file(&THIS_MODULE->mkobj.kobj, &bdat_attr);
 	if (ret) {
-		pr_err(GENERAL_LOG, "Failed to create bdat sysfs file\n");
+		pr_err("Failed to create bdat sysfs file\n");
 		memunmap(bdat_virt);
 		bdat_virt = NULL;
 		bdat_size = 0;
@@ -134,79 +124,18 @@ done:
 	return ret;
 }
 
-int sphcs_init_module(void)
+int bdat_init_module(void)
 {
-	int ret = 0;
-
-	sph_log_debug(START_UP_LOG, "module (version %s) started\n", SPH_VERSION);
-
-	DO_TRACE(sphcs_trace_init());
-
-	ret = sphcs_hw_init(&g_sphcs_pcie_callbacks);
-	if (ret)
-		pr_err(START_UP_LOG, "Failed to init hw layer\n");
-
-	/* Initliaize general messaging interface character device */
-	ret = sphcs_init_genmsg_interface();
-	if (ret) {
-		pr_err(START_UP_LOG, "Failed to init general messaging interface\n");
-		ret = -ENODEV;
-		goto pcie_cleanup;
-	}
-
-	/* Initialize maintenance interface character device */
-	ret = sphcs_init_maint_interface();
-	if (ret) {
-		pr_err(START_UP_LOG, "Failed to init maintenance interface\n");
-		ret = -ENODEV;
-		goto sphcs_genmsg_cleanup;
-	}
-#ifdef ULT
-	/* Initlize ULT module */
-	ret = sphcs_init_ult_module();
-	if (ret) {
-		pr_err(START_UP_LOG, "Failed to init ult module\n");
-		ret = -ENODEV;
-		goto sphcs_maint_cleanup;
-	}
-
-	sphcs_p2p_test_init();
-#endif
+	pr_debug("module (version %s) started\n", BDAT_VERSION);
 
 	init_bdat_sysfs();
 
 	return 0;
-
-#ifdef ULT
-	sphcs_p2p_test_cleanup();
-	sphcs_fini_ult_module();
-
-sphcs_maint_cleanup:
-#endif
-	sphcs_release_maint_interface();
-sphcs_genmsg_cleanup:
-	sphcs_release_genmsg_interface();
-pcie_cleanup:
-	sphcs_hw_cleanup();
-
-	return ret;
 }
 
-void sphcs_cleanup(void)
+void bdat_cleanup(void)
 {
-	sph_log_debug(GO_DOWN_LOG, "Cleaning Up the Module\n");
-#ifdef ULT
-	sphcs_p2p_test_cleanup();
-
-	sphcs_fini_ult_module();
-#endif
-	sphcs_net_dev_exit();
-
-	sphcs_release_maint_interface();
-
-	sphcs_release_genmsg_interface();
-
-	sphcs_hw_cleanup();
+	pr_debug("Cleaning Up the Module\n");
 
 	if (bdat_virt) {
 		sysfs_remove_bin_file(&THIS_MODULE->mkobj.kobj, &bdat_attr);
@@ -214,13 +143,13 @@ void sphcs_cleanup(void)
 	}
 }
 
-module_init(sphcs_init_module);
-module_exit(sphcs_cleanup);
+module_init(bdat_init_module);
+module_exit(bdat_cleanup);
 
 MODULE_LICENSE("GPL");
-MODULE_DESCRIPTION("SpringHill Card Driver");
+MODULE_DESCRIPTION("BDAT sysfs module");
 MODULE_AUTHOR("Intel Corporation");
-MODULE_VERSION(SPH_VERSION);
-#ifdef DEBUG
-MODULE_INFO(git_hash, SPH_GIT_HASH);
-#endif
+MODULE_VERSION(BDAT_VERSION);
+//#ifdef DEBUG
+//MODULE_INFO(git_hash, SPH_GIT_HASH);
+//#endif

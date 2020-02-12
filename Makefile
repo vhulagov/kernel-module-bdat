@@ -1,4 +1,5 @@
 obj-m = bdat.o
+EXTRA_CFLAGS += -DDEBUG
 KVERSION = $(shell uname -r)
 
 all:
